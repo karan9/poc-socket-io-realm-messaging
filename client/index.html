@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MongoDB Socket IO Scaling Test</title>
+    <link rel = "stylesheet" href = "https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0-alpha.6/css/bootstrap.min.css" integrity = "sha384-rwoIResjU2yc3z8GV/NPeZWAv56rSmLldC3R/AZzGRnGxQQKnKkoFVhFQhNUwEyJ" crossorigin = "anonymous">
+</head>
+<body>
+    <div class = "container">
+		<div class = "row">
+			<div class = "col-md-6 offset-md-3 col-sm-12">
+				<h1 class = "text-center">
+					Chat App
+				</h1>
+				<div id = "status"></div>
+				<div id = "chat">
+					<input type = "text" id = "name" class = "form-control" placeholder = "Enter name.">
+					<br>
+					<div class = "card">
+						<div id = "messages" class = "card-block">
+							
+						</div>
+					</div>
+					<br>
+          <textarea id = "textarea" class = "form-control" placeholder = "Enter message."></textarea>
+					<button id = "submit" class = "btn btn-primary">Submit</button>
+				</div>
+			</div>
+		</div>
+  </div>
+
+  <!-- Socket IO -->
+  <script src = "https://cdnjs.cloudflare.com/ajax/libs/socket.io/2.0.3/socket.io.js"></script>
+  <!-- JQuery -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+  <!-- Realm -->
+  <script src="https://unpkg.com/realm-web@0.8.0/dist/bundle.iife.js"></script>
+  <!-- axios -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/axios/0.19.2/axios.min.js"></script>
+
+  <script>
+
+    async function getJWTFromServer() {
+      const { data } = await axios.post("http://localhost:3001/auth");
+      console.log("recevied token", data);
+      return data.token;
+    }
+
+    async function syncOldMessages(params) {
+      // Create a realm instance
+      const app = new Realm.App({ id: "REALM APP ID" });  
+
+      // Get Token
+      const token = await getJWTFromServer();
+
+      // TODO: Get jwt from server
+      const credentials = Realm.Credentials.jwt(token);
+
+      try {
+        const user = await app.logIn(credentials);
+        console.dir(user);
+        const mongo = app.services.mongodb("mongodb-atlas");
+        const coll = mongo.db("eshow").collection("messages");
+        const docs = await coll.find()
+        
+        return {id: user.id, docs: docs};
+      } catch (error) {
+        console.error(error);
+      }
+    }
+
+    async function main(params) {
+      // Sync Old Mesasges
+      const { id, docs } = await syncOldMessages();
+      
+      if (Array.isArray(docs)) {
+        docs.map(doc => $("#messages").append("<p>" + doc.name + " : " + doc.text + "<p>"))
+      }
+
+
+      // Setup Socket Connections
+      const socket = io("http://localhost:4000");
+
+      if (socket) {
+        socket.on("output-chatroom1", (msg) => {
+          console.log("Got the payload client", msg)
+          // No need to re-print my own message
+          if (msg.sender !== id) {
+            $("#messages").append(`<p class="pull-left">${msg.name} : ${msg.text}</p>`)
+          }
+        });
+
+        $("#submit").click((e) => {
+          // 
+          e.preventDefault();
+
+
+          const message = { recevier: "chatroom1", sender: id, name: $("#name").val(), text: $("#textarea").val() };
+
+          socket.emit("input", message);
+
+          $("#messages").append(`<p class="pull-right">${message.name} : ${message.text}</p>`);
+          $("#textarea").val("");
+        })
+      }
+
+    }
+
+    main()
+  </script>
+</body>
+</html>
